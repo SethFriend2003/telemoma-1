@@ -2,6 +2,7 @@ from telemoma.human_interface.teleop_core import BaseTeleopInterface, TeleopObse
 import socket
 import struct
 from human_interface.runner import Runner
+from telemoma.utils.general_utils import run_threaded_command
 import numpy as np
 import time
 import queue
@@ -70,6 +71,15 @@ class Receiver(Runner):
                 data = _process_packet(message)
                 self.queue.put(data)  # Put data into the queue
                 # print(data)
+                # Print the pose data in real-time
+                # if "fram" in data:
+                #     print("Frame Number:", data["fram"]["fnum"])
+                #     print("Time:", data["fram"]["time"])
+                #     for i, item in enumerate(data["fram"]["btrs"]):
+                #         print(f"Bone {i+1} (ID: {item['bnid']}):")
+                #         print(f"  Translation: ({item['tran'][0]}, {item['tran'][1]}, {item['tran'][2]})")
+                #         print(f"  Rotation: ({item['tran'][3]}, {item['tran'][4]}, {item['tran'][5]}, {item['tran'][6]})")
+                #     print()
             except KeyError as e:
                 print(f"KeyError: {e}")
 
@@ -77,7 +87,6 @@ class Receiver(Runner):
         # Start the receiver loop in a new thread
         # Note: The loop method should be run in a separate thread or process
         Receiver().run(self.queue)
-        print("we are running")
 
     def stop(self):
         # Stop the receiver
@@ -86,7 +95,7 @@ class Receiver(Runner):
 
 
 class MocopiTeleopInterface(BaseTeleopInterface):
-    def __init__(self, addr="192.168.0.110", port=12351, *args, **kwargs):
+    def __init__(self, addr="192.168.0.235", port=12351, *args, **kwargs):
         """
         Initializes the teleop policy
         """
@@ -100,7 +109,7 @@ class MocopiTeleopInterface(BaseTeleopInterface):
         Start the mcp-receiver and the pose update thread.
         """
         self.receiver.start()  # Start the receiver
-        self._update_internal_state()  # Start updating the pose data
+        run_threaded_command(self._update_internal_state)  # Start updating the pose data
 
     def stop(self) -> None:
         """
@@ -125,9 +134,10 @@ class MocopiTeleopInterface(BaseTeleopInterface):
             try:
                 # Get the latest pose data from the receiver
                 if not self.receiver.queue.empty():
+                    # print(self.receiver.queue.get())
                     self.latest_pose = self.receiver.queue.get()
                     self.raw_data = self.latest_pose  # Update raw_data with the latest pose
-                    print("loop")
+                    # print("loop")
                 time.sleep(0.01)  # Adjust as needed for performance
                 # print(self.receiver.queue.get())
             except Exception as e:
@@ -162,13 +172,18 @@ class MocopiTeleopInterface(BaseTeleopInterface):
 
                 # Example mapping for specific bones (you'll need to adapt this)
                 if bone_id == 0:  # Example for the root bone (base)
-                    base_action = np.array([translation[0], translation[1], translation[2]])
-                elif bone_id == 18:  # Example for left hand
+                    base_action = np.array(translation[:3])
+                elif bone_id == 14:  # Example for left hand
                     left_hand_action[:3] = translation[:3]  # Position
-                    left_hand_action[3:] = translation[3:]  # Rotation (quaternion)
+                    left_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
 
-                elif bone_id == 14:  # Example for right hand
+                elif bone_id == 18:  # Example for right hand
                     right_hand_action[:3] = translation[:3]  # Position
-                    right_hand_action[3:] = translation[3:]  # Rotation (quaternion)
+                    right_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
+                
+                elif bone_id == 4:
+                    torso_action = translation[:3]
+    
 
+        print (base_action)
         return base_action, torso_action, left_hand_action, right_hand_action
