@@ -146,7 +146,7 @@ class iGibsonEnv(gym.Env):
 
         self.end_time = time.time()
         if self.start_time is not None:
-            print('Idle time:', 1/self.teleop_frequency - (self.end_time-self.start_time))
+            # print('Idle time:', 1/self.teleop_frequency - (self.end_time-self.start_time))
             time.sleep(max(0., 1/self.teleop_frequency - (self.end_time-self.start_time)))
         self.start_time = time.time()
 

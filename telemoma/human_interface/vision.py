@@ -12,7 +12,7 @@ from telemoma.utils.vision_teleop_utils import body_joint2idx, Body
 from collections import deque
 
 def convert_hip_to_robot_frame(hip_pos, hip_rot):
-    hip_pos = np.array([hip_pos[2], hip_pos[0], hip_pos[1]])
+    hip_pos = np.array([hip_pos[2], hip_pos[0], hip_pos[1]]) #remaps x,y,z to match robot| x = left, y = forward, z = up
 
     euler_angles = rmat_to_euler(hip_rot, degrees=False)
     euler_angles = np.array([euler_angles[2], euler_angles[0], -euler_angles[1]]) # making euler angle negative is a hack
@@ -251,7 +251,7 @@ class VisionTeleopPolicy(BaseTeleopInterface):
                 cv2.imshow('a', image)
                 cv2.waitKey(1)
         
-        self.reference_pose = self.get_reference()
+        self.reference_pose = self.get_reference() #last value when starting the script also goes to reference queue
 
         self.reference_queue.append(self.reference_pose) # human reference
 
@@ -261,9 +261,9 @@ class VisionTeleopPolicy(BaseTeleopInterface):
         cv2.destroyAllWindows()
 
     def get_nav_action(self, obs: TeleopObservation) -> np.ndarray:
-        self.reference_queue.append(self.get_reference())
-
-        human_reference = self.reference_queue[0]
+        self.reference_queue.append(self.get_reference()) #every time action is called, adds new reference to the queue which is the current position of human
+            
+        human_reference = self.reference_queue[0] # references first item in queue which is last recorded reference
         hip_pos, hip_rot = self.get_hip_position_and_rotation(relative=True, reference=human_reference)
         if hip_pos is None:
             return np.zeros(3)
@@ -271,15 +271,15 @@ class VisionTeleopPolicy(BaseTeleopInterface):
         hip_pos, hip_rot = convert_hip_to_robot_frame(hip_pos, hip_rot)
 
         pos_action = hip_pos*2
-        base_delta_euler = np.zeros(3)
-        base_delta_euler[2] = obs.base[2]
-        base_delta_quat = euler_to_quat(base_delta_euler)
-        target_delta_quat = rmat_to_quat(hip_rot)
-        quat_action = quat_diff(target_delta_quat, base_delta_quat)
-        euler_action = quat_to_euler(quat_action)
+        base_delta_euler = np.zeros(3) #initialize rotation array
+        base_delta_euler[2] = obs.base[2]   #take z value
+        base_delta_quat = euler_to_quat(base_delta_euler) # convert to quat
+        target_delta_quat = rmat_to_quat(hip_rot) # human relative pose converted to quat
+        quat_action = quat_diff(target_delta_quat, base_delta_quat) # get difference between human and robot relative pose
+        euler_action = quat_to_euler(quat_action) # convert to euler angle
 
-        action = np.array([pos_action[0], pos_action[1], euler_action[2]])
-        action = action.clip(-1, 1)
+        action = np.array([pos_action[0], pos_action[1], euler_action[2]]) # use last value of euler angle 
+        action = action.clip(-1, 1) # caps action between -1 and 1
 
         return action
     
@@ -308,12 +308,14 @@ class VisionTeleopPolicy(BaseTeleopInterface):
         hand_delta_pos, hand_delta_rot = convert_hand_to_robot_frame(hand_delta_pos, hand_delta_rot)
 
         robot_pos, robot_quat = robot_eef[:3], robot_eef[3:7]
-        robot_reference_pos, robot_reference_quat = self.robot_reference[side][:3], self.robot_reference[side][3:7]
+        robot_reference_pos, robot_reference_quat = self.robot_reference[side][:3], self.robot_reference[side][3:7] # saves robot hand refference pose
 
+        # to find relative position hand actions
         robot_pos_offset = robot_pos - robot_reference_pos
         target_pos_offset = hand_delta_pos
         pos_action = target_pos_offset - robot_pos_offset
 
+        # to find relative rotation hand actions
         # Calculate Euler Action #
         robot_quat_offset = quat_diff(robot_quat, robot_reference_quat)
         target_quat_offset = rmat_to_quat(hand_delta_rot)
@@ -328,7 +330,7 @@ class VisionTeleopPolicy(BaseTeleopInterface):
 
     def get_action(self, obs: TeleopObservation) -> TeleopAction:
         action = self.get_default_action()
-        if self.robot_reference is None:
+        if self.robot_reference is None: # if no reference set reference
             self.robot_reference = obs
         action.base = self.get_nav_action(obs)
         action.torso = self.get_torso_action(obs)

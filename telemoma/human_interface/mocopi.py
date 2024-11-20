@@ -104,12 +104,15 @@ class MocopiTeleopInterface(BaseTeleopInterface):
         self.latest_pose = None  # ToDo: store the latest pose data
         self.raw_data = {}
 
+        self.plot = []
+
     def start(self) -> None:
         """
         Start the mcp-receiver and the pose update thread.
         """
         self.receiver.start()  # Start the receiver
         run_threaded_command(self._update_internal_state)  # Start updating the pose data
+        self.set_reference()
 
     def stop(self) -> None:
         """
@@ -125,6 +128,15 @@ class MocopiTeleopInterface(BaseTeleopInterface):
         self.latest_pose = None  # Reset pose data
         self.raw_data = {}
 
+    def set_reference(self, timer=2):
+        start = time.time()
+        self.reference_pose = None
+        while time.time() -start < timer:
+            self.reference_pose = self.latest_pose
+            print('Setting Referene...', time.time())
+        # self.reference_queue = deque(maxlen=15)
+        # self.reference_queue.append(self.reference_pose)
+
     def _update_internal_state(self) -> None:
         """
         Update self.raw_data with the latest pose data from the receiver.
@@ -135,9 +147,10 @@ class MocopiTeleopInterface(BaseTeleopInterface):
                 # Get the latest pose data from the receiver
                 if not self.receiver.queue.empty():
                     # print(self.receiver.queue.get())
-                    self.latest_pose = self.receiver.queue.get()
-                    self.raw_data = self.latest_pose  # Update raw_data with the latest pose
-                    # print("loop")
+                    self.raw_data = self.receiver.queue.get()
+                    self.latest_pose = {item["bnid"]: item["tran"] for item in self.raw_data["fram"]["btrs"]}
+                    # self.raw_data = self.latest_pose  # Update raw_data with the latest pose
+                    # print(latest_pose)
                 time.sleep(0.01)  # Adjust as needed for performance
                 # print(self.receiver.queue.get())
             except Exception as e:
@@ -151,11 +164,23 @@ class MocopiTeleopInterface(BaseTeleopInterface):
         if self.latest_pose is None:
             return action  # Return default action if no pose data
 
+        if len(self.plot) == 100:
+            import matplotlib.pyplot as plt
+
+            plot = np.array(self.plot)
+            plt.figure()
+            plt.plot(plot[:, 0], label='x')
+            plt.plot(plot[:, 1], label='y')
+            plt.plot(plot[:, 2], label='z')
+            plt.legend()
+            plt.show()
+
+
         # Process the latest pose data to determine actions
-        action.base, action.torso, action.left, action.right = self.process_pose_data(self.latest_pose)
+        action.base, action.torso, action.left, action.right = self.process_pose_data(self.latest_pose, obs)
         return action
 
-    def process_pose_data(self, pose_data):
+    def process_pose_data(self, pose_data, obs: TeleopObservation):
         """
         Process the pose data to extract actions for the robot.
         """
@@ -164,26 +189,36 @@ class MocopiTeleopInterface(BaseTeleopInterface):
         left_hand_action = np.zeros(7)  # Placeholder for left hand action
         right_hand_action = np.zeros(7)  # Placeholder for right hand action
 
-        # Extract translation and rotation for each bone
-        if "fram" in pose_data:
-            for item in pose_data["fram"]["btrs"]:
-                bone_id = item["bnid"]
-                translation = item["tran"]
+        # Extract translation and rotation for each bone\
+        #convert pose_data to list/dictionary where indexing with bone id will give translation
+        # Example mapping for specific bones (you'll need to adapt this)
+        # Example for the root bone (base)
+        from telemoma.utils.transformations import quat_to_euler, euler_to_quat, quat_diff 
+        translation = pose_data[0]
+        
+        base_delta_euler = np.zeros(3)
+        base_delta_euler[2] = obs.base[2]
+        base_delta_quat = euler_to_quat(base_delta_euler)
+        target_delta_quat = translation[3:7]#quat_diff(translation[3:7], self.reference_pose[0][3:7])
+        quat_action = quat_diff(target_delta_quat, base_delta_quat)
+        euler_action = quat_to_euler(quat_action)
 
-                # Example mapping for specific bones (you'll need to adapt this)
-                if bone_id == 0:  # Example for the root bone (base)
-                    base_action = np.array(translation[:3])
-                elif bone_id == 14:  # Example for left hand
-                    left_hand_action[:3] = translation[:3]  # Position
-                    left_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
+        action = np.array([0, 0, euler_action[2]])
+        base_action = action.clip(-1, 1)
+        # base_action = np.array(translation[:2])
+        # elif bone_id == 14:  # Example for left hand
+        #     left_hand_action[:3] = translation[:3]  # Position
+        #     left_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)| Convert to Euler angle and pass in as 3rd part of base action
 
-                elif bone_id == 18:  # Example for right hand
-                    right_hand_action[:3] = translation[:3]  # Position
-                    right_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
-                
-                elif bone_id == 4:
-                    torso_action = translation[:3]
+        # elif bone_id == 18:  # Example for right hand
+        #     right_hand_action[:3] = translation[:3]  # Position
+        #     right_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
+        
+        # elif bone_id == 4:
+        #     torso_action = translation[:3]
     
 
-        print (base_action)
+        # print (base_action)
+        print(quat_to_euler(target_delta_quat))
+        self.plot.append(quat_to_euler(target_delta_quat))
         return base_action, torso_action, left_hand_action, right_hand_action

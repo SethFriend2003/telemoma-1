@@ -1,6 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
+import threading
+from telemoma.human_interface.teleop_core import BaseTeleopInterface, TeleopObservation, TeleopAction
+import socket
+import struct
+from human_interface.runner import Runner
+from telemoma.utils.general_utils import run_threaded_command
+import time
+import queue
 
 class MocopiVisualizer:
     """Visualizer for Mocopi motion capture data in 3D."""
@@ -8,35 +16,33 @@ class MocopiVisualizer:
     # Define the skeleton connections for Mocopi
     SKELETON_LINKS = [
         # Torso
-        (0, 3),   # pelvis to spine
-        (3, 6),   # spine to chest
-        (6, 9),   # chest to upper_chest
-        (9, 12),  # upper_chest to neck
-        (12, 15), # neck to head
+
+        (0, 6),   # pelvis to collarbone
+        (6, 10),   # collarbone to head
 
         # Left arm
-        (9, 13),  # upper_chest to left_shoulder
-        (13, 16), # left_shoulder to left_elbow
-        (16, 18), # left_elbow to left_wrist
-        (18, 20), # left_wrist to left_hand
+        (11, 12),  # left shoulder to upper arm
+        (12, 13),  #upper arm to elbow
+        (13, 14), # elbow to hand
+
 
         # Right arm
-        (9, 14),  # upper_chest to right_shoulder
-        (14, 17), # right_shoulder to right_elbow
-        (17, 19), # right_elbow to right_wrist
-        (19, 21), # right_wrist to right_hand
+        (15, 16),  # right shoulder to upper arm
+        (16, 17), # upper arm to elbow
+        (17, 18), # elbow to hand
+    
 
         # Left leg
-        (0, 1),   # pelvis to left_hip
-        (1, 4),   # left_hip to left_knee
-        (4, 7),   # left_knee to left_ankle
-        (7, 10),  # left_ankle to left_toe
+        (0, 19),   # pelvis to left_hip
+        (19, 20),   # left_hip to left_knee
+        (20, 21),   # left_knee to left_ankle
+        (21, 22),  # left_ankle to left_toe
 
         # Right leg
-        (0, 2),   # pelvis to right_hip
-        (2, 5),   # right_hip to right_knee
-        (5, 8),   # right_knee to right_ankle
-        (8, 11),  # right_ankle to right_toe
+        (0, 23),   # pelvis to right_hip
+        (23, 24),   # right_hip to right_knee
+        (24, 25),   # right_knee to right_ankle
+        (25, 26),  # right_ankle to right_toe
     ]
 
     def __init__(self):
@@ -44,6 +50,10 @@ class MocopiVisualizer:
         self.fig = plt.figure(figsize=(10, 10))
         self.ax = self.fig.add_subplot(111, projection='3d')
         plt.ion()  # Enable interactive mode
+
+    def start(self):
+        self.ax.clear()
+        plt.show()
 
     def extract_bone_positions(self, pose_data):
         """Extract bone positions from Mocopi pose data."""
@@ -108,24 +118,3 @@ class MocopiVisualizer:
     def close(self):
         """Close the visualization window."""
         plt.close(self.fig)
-
-# Example usage:
-def run_visualization(receiver):
-    """Run visualization with a Mocopi receiver."""
-    visualizer = MocopiVisualizer()
-
-    try:
-        while True:
-            if not receiver.queue.empty():
-                pose_data = receiver.queue.get()
-                visualizer.visualize_frame(pose_data)
-    except KeyboardInterrupt:
-        print("Visualization stopped by user")
-    finally:
-        visualizer.close()
-
-# To use:
-if __name__ == "__main__":
-    receiver = Receiver(addr="192.168.0.110", port=12351)
-    receiver.start()
-    run_visualization(receiver)
