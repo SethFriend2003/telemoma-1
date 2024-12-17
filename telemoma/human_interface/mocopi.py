@@ -205,19 +205,18 @@ class MocopiTeleopInterface(BaseTeleopInterface):
 
         action = np.array([0, 0, euler_action[2]])
         base_action = action.clip(-1, 1)
-        # base_action = np.array(translation[:2])
-        # elif bone_id == 14:  # Example for left hand
-        #     left_hand_action[:3] = translation[:3]  # Position
-        #     left_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)| Convert to Euler angle and pass in as 3rd part of base action
+        base_action = np.array(translation[:2])
+        elif bone_id == 14:  # Example for left hand
+        left_hand_action[:3] = translation[:3]  # Position
+        left_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)| Convert to Euler angle and pass in as 3rd part of base action
 
-        # elif bone_id == 18:  # Example for right hand
-        #     right_hand_action[:3] = translation[:3]  # Position
-        #     right_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
+        elif bone_id == 18:  # Example for right hand
+        right_hand_action[:3] = translation[:3]  # Position
+        right_hand_action[3:7] = translation[3:7]  # Rotation (quaternion)
         
-        # elif bone_id == 4:
-        #     torso_action = translation[:3]
+        elif bone_id == 4:
+        torso_action = translation[:3]
     
-
         # print (base_action)
         print(quat_to_euler(target_delta_quat))
         self.plot.append(quat_to_euler(target_delta_quat))
